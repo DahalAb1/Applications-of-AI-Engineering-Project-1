@@ -87,9 +87,9 @@ In practice: if retrieved chunks feel on-topic but the LLM still gives wrong or 
 | # | Question | Expected answer |
 |---|----------|-----------------|
 | 1 | What is the annual award amount for the Barry Goldwater Scholarship and how many scholarships are awarded each year? | $7,500 per year; up to 410 scholarships awarded annually to U.S. sophomores and juniors in STEM |
-| 2 | What percentage of U.S. undergraduates received grant aid in the most recent reporting year, and what was the average grant amount? | A specific percentage and dollar figure from the College Board Trends in Student Aid 2025 report |
+| 2 | What percentage of U.S. undergraduates received grant aid in the most recent reporting year, and what was the average grant amount? | Per College Board Trends in Student Aid 2025 (AY 2024–25): 57% of undergraduate families used grant aid; undergraduates received an average of $16,810 per FTE student in total aid, of which roughly $12,080 was grant aid |
 | 3 | What share of computing PhD degrees were awarded to women in the 2022–2023 academic year according to the CRA Taulbee Survey? | A specific percentage from the CRA Taulbee Survey 2022–2023 report |
-| 4 | How much did the federal government obligate for academic research and development in FY 2024? | A specific dollar figure in billions from the NCSES Federal R&D Funding FY 2024–25 report |
+| 4 | How much did the federal government obligate for research and development in FY 2024? | Approximately $202 billion in total federal R&D obligations for FY 2024, as reported in the summary table of the NSF NCSES Federal Funds for R&D survey (the survey reports figures in thousands of dollars) |
 | 5 | What is the eligibility GPA requirement for the Goldwater Scholarship and what fields of study qualify? | No formal GPA cutoff stated by Goldwater, but nominees are typically in the top of their class; fields include natural sciences, mathematics, and engineering |
 
 ---
