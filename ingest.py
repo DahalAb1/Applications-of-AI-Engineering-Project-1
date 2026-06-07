@@ -3,18 +3,7 @@ import re
 import pdfplumber
 import requests
 from bs4 import BeautifulSoup
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-
-
-"""
-Problems found in chunking : 
-
-1. Chunking did not extract monetary value, $ signs
-2. Percentages, and numeric symbols were ignored, therefore, some numbers lost their significance 
-3. My RAG is heavily dependent on numeric data so this should be handled more carefully
-4. Chunking data from table and chart lost meaning when they were transcribed as text by pdfplumber  
-"""
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 DOCUMENTS_DIR = "documents"
 CHUNK_SIZE = 500
@@ -31,6 +20,14 @@ def clean_text(text: str) -> str:
     text = re.sub(r'[ \t]+', ' ', text)
     text = re.sub(r'\x0c', '', text)  # remove form feed characters from PDFs
     return text.strip()
+
+
+def is_garbage(text: str) -> bool:
+    words = text.split()
+    if len(words) == 0:
+        return True
+    single_chars = sum(1 for w in words if len(w) == 1)
+    return (single_chars / len(words)) > 0.6
 
 
 def load_pdfs() -> list[dict]:
@@ -56,21 +53,24 @@ def load_pdfs() -> list[dict]:
                     pages.append(text)
 
         if not pages:
-            print(f"  WARNING: no text extracted from {filename} (may be scanned)")
+            print(f"  WARNING: no text extracted from {filename}")
             continue
 
         full_text = clean_text("\n\n".join(pages))
         splits = splitter.split_text(full_text)
 
+        skipped = 0
         for i, chunk in enumerate(splits):
-            if len(chunk.strip()) > 0:
+            if len(chunk.strip()) > 0 and not is_garbage(chunk):
                 chunks.append({
                     "text": chunk,
                     "source": filename,
                     "chunk_index": i,
                 })
+            else:
+                skipped += 1
 
-        print(f"  → {len(splits)} chunks")
+        print(f"  → {len(splits) - skipped} chunks ({skipped} garbage chunks skipped)")
 
     return chunks
 
