@@ -40,19 +40,24 @@ This RAG system covers undergraduate STEM scholarships — eligibility criteria,
      State your chunk size (in tokens or characters), overlap size, and explain why those
      numbers fit the structure of your documents.
      A review-heavy corpus warrants different chunking than a long FAQ. -->
-     Chunk size depends on the model's token size, and we also have to be careful to not let context change when we decide on chunks. What would a proper size be? 
 
-Guiding questions — use these to think it through before deciding:
-- Are your documents short reviews (1–3 sentences) or long guides (many paragraphs)? How does that affect the right chunk size?
-- If a key fact spans two adjacent chunks, will either chunk be retrievable on its own? What does overlap help with?
-- How would you know if your chunks are too small? Too large? What would bad retrieval results look like in each case?
+My documents are all long-form guides — 8 PDFs and 2 websites. The PDFs are dense statistical and policy reports where information is presented as a mix of short data-heavy sentences and longer explanatory paragraphs.
 
+The LLM for this project is **llama-3.3-70b-versatile** with a context window of 131,072 tokens and a max output of 32,768 tokens. The context window is the total budget for everything the model sees in one call — system prompt, user query, and all retrieved chunks combined. A chunk is a small, focused piece of one document — not the full context window. At query time, the top-k most relevant chunks are retrieved from ChromaDB and passed to the LLM together, so the context window is combination of all of them. Each chunk therefore needs to be small enough to represent one specific idea, but large enough that the idea is complete and self-contained.
 
-**Chunk size:**
+According to [OpenAI's tokenizer documentation](https://platform.openai.com/tokenizer), 1 token ≈ 0.75 words, meaning 131,072 tokens ≈ 98,000 words total context. A chunk of 500 tokens covers roughly one dense paragraph — enough to contain a complete fact like an eligibility condition or award amount without blending it with unrelated information.
 
-**Overlap:**
+One problem with chunking is that a key fact can span two adjacent chunks, making neither chunk fully self-contained. Overlap solves this by repeating the last N tokens of one chunk at the start of the next, so a fact that straddles a boundary is fully contained in at least one chunk — whichever one the similarity search scores higher gets returned, and the complete fact is already inside it. This problem tho is already solved by combining top-k most relevant chunks from ChromaDB. 
 
-**Reasoning:**
+The goal of chunking is to give the embedding model just enough text to form a meaningful, specific vector. In this project, a single paragraph might contain an award amount, an eligibility condition, and a demographic breakdown all at once — making chunk size especially consequential. If chunks are too small, a query like "What is the Goldwater Scholarship award amount?" might return a chunk that just says "$7,500 per year" with no mention of which scholarship it refers to. If chunks are too large, a query about eligibility might pull back 600 words covering eligibility, deadlines, and application tips all blended together — the embedding becomes a blurry average of all those topics and the LLM has to hunt through the noise, sometimes hallucinating rather than admitting it can't find the answer.
+
+In practice: if retrieved chunks feel on-topic but the LLM still gives wrong or vague answers, chunks are too large. If the LLM says "I don't have enough information" even when the answer exists in the documents, chunks are too small.
+
+**Chunk size:** 500 tokens
+
+**Overlap:** 50 tokens
+
+**Reasoning:** Pinecone's chunking documentation recommends 256–512 tokens as the starting range for most document types, with longer chunks suited to dense, structured text where semantic units are paragraphs rather than sentences. My documents — policy reports and statistical surveys — fall squarely in that category, so 500 tokens sits at the upper end of that range intentionally. The 50-token overlap follows the commonly cited 10% rule (overlap ≈ 10% of chunk size), which is enough to catch boundary-spanning facts without duplicating so much content that adjacent chunks become redundant and confuse retrieval. One known limitation: all-MiniLM-L6-v2 has a 256-token input ceiling, so the second half of each 500-token chunk gets truncated before embedding. In practice this is acceptable because the opening sentences of a paragraph typically establish its main topic — the embedding still points to the right content — but it is a real tradeoff worth revisiting if retrieval quality is poor.
 
 ---
 
@@ -64,11 +69,11 @@ Guiding questions — use these to think it through before deciding:
      would you weigh in choosing a different embedding model — context length, multilingual
      support, accuracy on domain-specific text, latency? -->
 
-**Embedding model:**
+**Embedding model:** all-MiniLM-L6-v2 via sentence-transformers. Runs locally with no API key or rate limits, which makes it practical for this project. It maps text into a 384-dimensional vector space, meaning semantically similar text ends up close together — so a query like "who qualifies for the Goldwater Scholarship" can retrieve a chunk that says "nominees must be U.S. citizens enrolled full-time in a STEM degree" even though none of those exact words appeared in the query.
 
-**Top-k:**
+**Top-k:** 5. Retrieving 5 chunks gives the LLM enough context to synthesize a complete answer without flooding it with loosely related content. At 500 tokens per chunk, 5 chunks = ~2,500 tokens, which fits comfortably within the 131,072 token context window alongside the system prompt and user query.
 
-**Production tradeoff reflection:**
+**Production tradeoff reflection:** all-MiniLM-L6-v2 has a 256-token input limit, meaning chunks longer than that get silently truncated before embedding — a real risk for dense policy documents. For a production system, I would consider text-embedding-3-large (OpenAI) for its higher accuracy and longer context support, or a multilingual model like paraphrase-multilingual-MiniLM-L12-v2 since this tool targets students worldwide, many of whom may query in languages other than English. The tradeoff is cost and latency — API-based models charge per token and add network overhead, while local models like all-MiniLM-L6-v2 are free and fast but less accurate on domain-specific text.
 
 ---
 
@@ -81,11 +86,11 @@ Guiding questions — use these to think it through before deciding:
 
 | # | Question | Expected answer |
 |---|----------|-----------------|
-| 1 | | |
-| 2 | | |
-| 3 | | |
-| 4 | | |
-| 5 | | |
+| 1 | What is the annual award amount for the Barry Goldwater Scholarship and how many scholarships are awarded each year? | $7,500 per year; up to 410 scholarships awarded annually to U.S. sophomores and juniors in STEM |
+| 2 | What percentage of U.S. undergraduates received grant aid in the most recent reporting year, and what was the average grant amount? | A specific percentage and dollar figure from the College Board Trends in Student Aid 2025 report |
+| 3 | What share of computing PhD degrees were awarded to women in the 2022–2023 academic year according to the CRA Taulbee Survey? | A specific percentage from the CRA Taulbee Survey 2022–2023 report |
+| 4 | How much did the federal government obligate for academic research and development in FY 2024? | A specific dollar figure in billions from the NCSES Federal R&D Funding FY 2024–25 report |
+| 5 | What is the eligibility GPA requirement for the Goldwater Scholarship and what fields of study qualify? | No formal GPA cutoff stated by Goldwater, but nominees are typically in the top of their class; fields include natural sciences, mathematics, and engineering |
 
 ---
 
@@ -95,9 +100,9 @@ Guiding questions — use these to think it through before deciding:
      Consider: noisy or inconsistent documents, missing source attribution, off-topic
      retrieval, chunks that split key information across boundaries. -->
 
-1.
+1. **Statistical data split across chunk boundaries.** My PDFs are dense with numbers — a single table might span multiple paragraphs where the header (e.g. "Federal R&D obligations by field") appears in one chunk and the actual figures appear in the next. If a student asks "how much federal funding goes to engineering?", the chunk with the dollar figure has no context about what it refers to, and the chunk with the header has no numbers. The embedding for either chunk alone won't match the query well, and the LLM will either return a vague answer or hallucinate. Overlap helps but doesn't fully solve this for table-heavy content.
 
-2.
+2. **All-MiniLM-L6-v2 truncating long chunks before embedding.** The model has a 256-token input ceiling, but my chunks are 500 tokens. The second half of every chunk gets silently dropped before the vector is computed. For chunks where the key fact appears late in the paragraph — common in policy reports that lead with context before stating the finding — retrieval will miss it entirely because the embedding never saw it. This could cause the system to confidently return a chunk that looks relevant but doesn't actually contain the answer the student needs.
 
 ---
 
@@ -108,6 +113,8 @@ Guiding questions — use these to think it through before deciding:
      Label each stage with the tool or library you're using.
      You can use ASCII art, a Mermaid diagram, or embed a sketch as an image.
      You'll use this diagram as context when prompting AI tools to implement each stage. -->
+
+![Architecture Diagram](Architecture_Diagram.png)
 
 ---
 
@@ -124,7 +131,10 @@ Guiding questions — use these to think it through before deciding:
      with my specified chunk size and overlap" is a plan. -->
 
 **Milestone 3 — Ingestion and chunking:**
+I'll use Claude. I'll paste in the Documents section and Chunking Strategy section from planning.md and ask it to implement `ingest.py` — a script that loads each PDF with pdfplumber, strips headers, footers, and page numbers, and splits the cleaned text using LangChain's RecursiveCharacterTextSplitter at 500 tokens with 50 token overlap. I'll also ask it to attach source metadata (filename, page number) to each chunk so attribution works downstream. I'll verify by printing 5 random chunks and checking that each is readable, self-contained, and tagged with the correct source file. If I see HTML artifacts, empty strings, or chunks without metadata, I'll ask Claude to debug the specific issue by showing it the bad output.
 
 **Milestone 4 — Embedding and retrieval:**
+I'll use Claude. I'll give it the Architecture diagram, the Retrieval Approach section, and the output schema from Milestone 3 (chunk + metadata), and ask it to implement `embed.py` — a script that loads chunks, embeds them with all-MiniLM-L6-v2, and stores them in ChromaDB with source metadata. I'll also ask it to write a `retrieve.py` function that takes a query string and returns the top-5 chunks with distance scores. I'll verify by running all 5 evaluation questions from planning.md and checking that distance scores are below 0.5 and the returned chunks visibly relate to each question. If retrieval is weak, I'll ask Claude to diagnose whether the issue is chunk size, embedding truncation, or noisy content.
 
 **Milestone 5 — Generation and interface:**
+I'll use Claude. I'll give it the full planning.md, the retrieve function from Milestone 4, and the Gradio skeleton from the project instructions, and ask it to wire everything into `app.py` — connecting retrieval to Groq's llama-3.3-70b-versatile with a system prompt that explicitly instructs the model to answer only from retrieved context and to cite sources. I'll verify grounding by asking a question my documents don't cover and confirming the system declines rather than hallucinating. I'll also ask Claude to explain any part of the generated prompt template I don't understand before running it.
